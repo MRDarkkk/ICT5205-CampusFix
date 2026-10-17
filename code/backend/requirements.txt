@@ -1,0 +1,1 @@
+# AWS Lambda Python 3.13 runtime includes boto3. No third-party Lambda dependencies.

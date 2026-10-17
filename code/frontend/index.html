@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="CampusFix: report and track campus maintenance requests">
+<title>CampusFix | Report and Track</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header class="site-header"><div class="container topbar"><a class="brand" href="index.html"><span class="brand-icon">CF</span> CampusFix</a><nav aria-label="Main navigation"><a class="active" href="index.html">Report &amp; track</a><a href="admin.html">Staff dashboard</a></nav></div></header>
+<main class="container">
+ <section class="hero"><div class="eyebrow">CAMPUS MAINTENANCE REQUESTS</div><h1>A better way to report what needs fixing.</h1><p>Report damaged equipment, building maintenance and safety concerns. Get a tracking ID and follow the status of your report.</p></section>
+ <div class="layout">
+ <section class="panel" aria-labelledby="report-title"><div class="section-header"><span class="step">01</span><div><h2 id="report-title">Report an issue</h2><p>Tell the maintenance team what happened.</p></div></div>
+  <form id="issueForm">
+   <label for="title">Issue title <span class="required">*</span></label><input id="title" name="title" maxlength="120" minlength="3" required placeholder="e.g. Projector not working in Room B12">
+   <label for="description">Description <span class="required">*</span></label><textarea id="description" name="description" maxlength="1000" minlength="4" required rows="4" placeholder="Explain the issue and how to locate it"></textarea>
+   <label for="location">Building / location <span class="required">*</span></label><input id="location" name="location" maxlength="120" required placeholder="e.g. Building B — Room 12">
+   <div class="two-col"><div><label for="category">Category <span class="required">*</span></label><select id="category" required><option value="">Select category</option><option value="plumbing">Plumbing</option><option value="electrical">Electrical</option><option value="it">IT / equipment</option><option value="furniture">Furniture</option><option value="safety">Safety</option><option value="other">Other</option></select></div>
+    <div><label for="priority">Priority <span class="required">*</span></label><select id="priority" required><option value="medium">Medium</option><option value="low">Low</option><option value="high">High</option></select></div></div>
+   <label for="photo">Photo (optional, up to 5 MB)</label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp"><p class="hint">JPEG, PNG or WebP. Uploaded images are kept in private cloud storage.</p>
+   <button type="submit" class="button primary" id="submitBtn">Submit maintenance report</button>
+  </form>
+  <div id="reportMessage" class="message" role="status" aria-live="polite" hidden></div>
+ </section>
+ <aside class="side-stack"><section class="panel" aria-labelledby="track-title"><div class="section-header"><span class="step">02</span><div><h2 id="track-title">Track your report</h2><p>See the latest maintenance status.</p></div></div>
+   <form id="trackForm"><label for="trackingId">Tracking ID</label><input id="trackingId" placeholder="ISS-..." required pattern="ISS-[a-f0-9]{32}"><button type="submit" class="button secondary" id="trackBtn">Check status</button></form>
+   <div id="trackingResult" class="result" role="status" aria-live="polite" hidden></div>
+  </section>
+  <section class="info-panel"><div class="eyebrow">HOW IT WORKS</div><ol><li><strong>Report</strong> the issue and optionally upload a photo.</li><li><strong>Save</strong> your tracking ID to check later.</li><li><strong>Follow</strong> the status as maintenance staff progress.</li></ol><p class="hint">This is an academic prototype, not an official campus emergency service. For urgent hazards, contact campus security.</p></section>
+ </aside></div>
+</main><footer class="container site-footer">CampusFix · ICT5205 Assignment 3 · Academic prototype</footer>
+<script src="config.js"></script><script src="app.js"></script>
+</body></html>

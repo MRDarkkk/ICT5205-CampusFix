@@ -1,0 +1,32 @@
+.aws-sam/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+.env.*
+!*.example
+config.local.js
+*.zip
+# Student details should stay in the private LMS submission
+readme.txt
+
+# Local Python testing environment
+.venv/
+
+# Local backups
+*.bak
+*.backup.md
+
+# Generated submission documents and packages
+submission/
+
+# Word and PDF temporary files
+~$*.docx
+
+# Local editor settings
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db

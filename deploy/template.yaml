@@ -1,0 +1,339 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: CampusFix Assignment 3 - serverless maintenance reporting prototype (Sydney)
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [x86_64]
+    Tracing: Disabled
+
+Resources:
+  IssuesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: issue_id, AttributeType: S}
+        - {AttributeName: entity_type, AttributeType: S}
+        - {AttributeName: status, AttributeType: S}
+        - {AttributeName: created_at, AttributeType: S}
+      KeySchema:
+        - {AttributeName: issue_id, KeyType: HASH}
+      GlobalSecondaryIndexes:
+        - IndexName: entity-created-index
+          KeySchema:
+            - {AttributeName: entity_type, KeyType: HASH}
+            - {AttributeName: created_at, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+        - IndexName: status-created-index
+          KeySchema:
+            - {AttributeName: status, KeyType: HASH}
+            - {AttributeName: created_at, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: false}
+
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+
+  PhotoBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [POST, GET]
+            AllowedOrigins: [!Sub 'https://${FrontendDistribution.DomainName}']
+            AllowedHeaders: ['*']
+            MaxAge: 300
+
+  FrontendOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${AWS::StackName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub '${AWS::StackName}-static-cache'
+        DefaultTTL: 300
+        MaxTTL: 3600
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          CookiesConfig: {CookieBehavior: none}
+          HeadersConfig: {HeaderBehavior: none}
+          QueryStringsConfig: {QueryStringBehavior: none}
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        DefaultRootObject: index.html
+        Origins:
+          - Id: site-origin
+            DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            S3OriginConfig: {OriginAccessIdentity: ''}
+            OriginAccessControlId: !Ref FrontendOAC
+        DefaultCacheBehavior:
+          TargetOriginId: site-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: !Ref FrontendCachePolicy
+          Compress: true
+        ViewerCertificate: {CloudFrontDefaultCertificate: true}
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontDistributionOnly
+            Effect: Allow
+            Principal: {Service: cloudfront.amazonaws.com}
+            Action: s3:GetObject
+            Resource: !Sub '${WebsiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}'
+
+  StaffUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-staff'
+      UsernameAttributes: [email]
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 10
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+
+  StaffUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: campusfix-browser
+      UserPoolId: !Ref StaffUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      TokenValidityUnits: {AccessToken: hours, IdToken: hours}
+
+  StaffGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref StaffUserPool
+      GroupName: staff
+      Description: Approved campus maintenance dashboard operators
+
+  NotificationEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: event_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: event_id, KeyType: HASH}
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  NotificationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+
+  NotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 90
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt NotificationDLQ.Arn
+        maxReceiveCount: 3
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: CampusFix maintenance notifications
+
+  CampusApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 10
+        ThrottlingRateLimit: 5
+      RouteSettings:
+        'POST /uploads/presign':
+          ThrottlingBurstLimit: 2
+          ThrottlingRateLimit: 1
+      CorsConfiguration:
+        AllowOrigins: [!Sub 'https://${FrontendDistribution.DomainName}']
+        AllowHeaders: [Content-Type, Authorization]
+        AllowMethods: [GET, POST, PATCH, OPTIONS]
+        MaxAge: 300
+      Auth:
+        Authorizers:
+          StaffJwt:
+            JwtConfiguration:
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${StaffUserPool}'
+              audience: [!Ref StaffUserPoolClient]
+            IdentitySource: '$request.header.Authorization'
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../code/backend/
+      Handler: api_handler.lambda_handler
+      Timeout: 15
+      MemorySize: 256
+      Environment:
+        Variables:
+          ISSUES_TABLE: !Ref IssuesTable
+          PHOTO_BUCKET: !Ref PhotoBucket
+          QUEUE_URL: !Ref NotificationQueue
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Sid: DynamoDbIssueActions
+              Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
+              Resource:
+                - !GetAtt IssuesTable.Arn
+                - !Sub '${IssuesTable.Arn}/index/*'
+            - Sid: PrivatePhotoUploadsAndMetadata
+              Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${PhotoBucket.Arn}/uploads/*'
+            - Sid: EnqueueNotification
+              Effect: Allow
+              Action: [sqs:SendMessage]
+              Resource: !GetAtt NotificationQueue.Arn
+      Events:
+        CreateIssue:
+          Type: HttpApi
+          Properties: {ApiId: !Ref CampusApi, Path: /issues, Method: POST}
+        GetIssue:
+          Type: HttpApi
+          Properties: {ApiId: !Ref CampusApi, Path: '/issues/{id}', Method: GET}
+        PresignUpload:
+          Type: HttpApi
+          Properties: {ApiId: !Ref CampusApi, Path: /uploads/presign, Method: POST}
+        AdminList:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CampusApi
+            Path: /admin/issues
+            Method: GET
+            Auth: {Authorizer: StaffJwt}
+        AdminUpdate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CampusApi
+            Path: '/admin/issues/{id}'
+            Method: PATCH
+            Auth: {Authorizer: StaffJwt}
+        AdminPhoto:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CampusApi
+            Path: '/admin/issues/{id}/photo'
+            Method: GET
+            Auth: {Authorizer: StaffJwt}
+
+  NotificationWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../code/backend/
+      Handler: notification_worker.lambda_handler
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          TOPIC_ARN: !Ref NotificationTopic
+          EVENTS_TABLE: !Ref NotificationEventsTable
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Sid: ReadNotificationQueue
+              Effect: Allow
+              Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+              Resource: !GetAtt NotificationQueue.Arn
+            - Sid: PublishNotification
+              Effect: Allow
+              Action: [sns:Publish]
+              Resource: !Ref NotificationTopic
+            - Sid: NotificationIdempotency
+              Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:DeleteItem]
+              Resource: !GetAtt NotificationEventsTable.Arn
+      Events:
+        Queue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt NotificationQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: 7
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${NotificationWorker}'
+      RetentionInDays: 7
+
+Outputs:
+  ApiBaseUrl:
+    Description: HTTP API endpoint (HTTPS)
+    Value: !Sub 'https://${CampusApi}.execute-api.${AWS::Region}.amazonaws.com'
+  WebsiteUrl:
+    Description: CloudFront frontend HTTPS URL
+    Value: !Sub 'https://${FrontendDistribution.DomainName}'
+  WebsiteBucketName: {Value: !Ref WebsiteBucket}
+  PhotoBucketName: {Value: !Ref PhotoBucket}
+  UserPoolId: {Value: !Ref StaffUserPool}
+  UserPoolClientId: {Value: !Ref StaffUserPoolClient}
+  NotificationTopicArn: {Value: !Ref NotificationTopic}
+  NotificationQueueUrl: {Value: !Ref NotificationQueue}
+  IssuesTableName: {Value: !Ref IssuesTable}
+  CloudFrontDistributionId: {Value: !Ref FrontendDistribution}
