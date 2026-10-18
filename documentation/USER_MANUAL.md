@@ -25,7 +25,7 @@ CampusFix is not an official campus emergency service. Urgent hazards should be 
 9. Click Submit Maintenance Report.
 10. Save the tracking ID displayed after successful submission.
 
-The tracking ID is needed to check the issue later.
+**Important:** Save or copy your tracking ID immediately after submitting a report. You will need it to check the report's progress. The prototype does not provide a self-service tracking ID recovery feature.
 
 ## 3. Tracking an Issue
 
@@ -49,7 +49,7 @@ Tracking IDs should be kept private because anyone possessing a valid ID may be 
 3. Enter the permanent password.
 4. Click Sign In.
 
-Only authorised accounts assigned to the Cognito staff group can access the protected management functions.
+Staff accounts must be created and authorised by the system administrator and assigned to the Cognito `staff` group before they can access the protected dashboard.
 
 If login fails, verify the account credentials and contact the system administrator.
 
