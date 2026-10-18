@@ -59,6 +59,7 @@ It uses AWS SAM with explicit confirmation of the changeset.
 For a controlled first deployment, prepare and review a CloudFormation change set before executing it.
 
 Never repeat initial deployment commands unnecessarily against an existing stack.
+Before executing the script, inspect `deploy/deploy.sh` and confirm the intended AWS account, region, stack name and deployment options.
 
 ## 6. Deployed environment
 
@@ -147,7 +148,7 @@ The following tests were completed:
 - Unauthorised status update rejected: HTTP 401
 - Database record remained unchanged after rejected update
 
-Supporting screenshots are maintained separately.
+Supporting screenshots of the AWS infrastructure, application workflows, automated testing and email notifications are available in the repository's `images/` directory. See `documentation/EVIDENCE_REGISTER.md` for the evidence summary.
 
 ## 11. Known limitations
 
@@ -171,4 +172,4 @@ After assessment and tutor demonstration:
 6. Check for remaining logs, storage and deployment artifacts.
 7. Review AWS billing.
 
-Do not delete unrelated AWS resources or remove the deployment before the required demonstration.
+After stack deletion, separately review any manually created resources, SNS subscriptions, CloudWatch logs, AWS Budgets and other account-level configurations. Remove only resources associated with the CampusFix demonstration and confirm that no unexpected charges remain.
